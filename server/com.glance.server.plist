@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.glance.server</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/fictorial/.nvm/versions/node/v24.12.0/bin/node</string>
+		<string>/Users/fictorial/projects/kb/glance/server/index.js</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/fictorial/projects/kb/glance/server</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/fictorial/.local/share/glance/server.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/fictorial/.local/share/glance/server.log</string>
+</dict>
+</plist>
