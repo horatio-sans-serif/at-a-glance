@@ -2,12 +2,96 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Glance</title>
+    <title>Glance Settings</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>Glance</h1>
-    <div id="app"></div>
+    <div class="popup">
+      <header>
+        <h1>Glance</h1>
+        <button id="analyzeBtn" class="primary-btn">Analyze This Page</button>
+      </header>
+
+      <section>
+        <h2>User Profile</h2>
+        <textarea
+          id="userProfile"
+          rows="4"
+          placeholder="Your interests, role, tech stack..."
+        ></textarea>
+      </section>
+
+      <section>
+        <h2>Ollama</h2>
+        <div class="field">
+          <label>Endpoint</label>
+          <input
+            type="text"
+            id="ollamaEndpoint"
+            placeholder="http://localhost:11434"
+          />
+        </div>
+        <div class="field">
+          <label>Model</label>
+          <input type="text" id="ollamaModel" placeholder="qwen3" />
+        </div>
+      </section>
+
+      <section>
+        <h2>Auto-Show</h2>
+        <div class="field row">
+          <label>Enabled</label>
+          <input type="checkbox" id="autoShow" />
+        </div>
+        <div id="autoShowConfig" class="indent">
+          <div class="field">
+            <label
+              ><input type="radio" name="autoShowMode" value="all" checked />
+              All pages</label
+            >
+          </div>
+          <div class="field">
+            <label
+              ><input type="radio" name="autoShowMode" value="include" /> Only
+              matching patterns</label
+            >
+          </div>
+          <div class="field">
+            <label
+              ><input type="radio" name="autoShowMode" value="exclude" />
+              Exclude matching patterns</label
+            >
+          </div>
+        </div>
+      </section>
+
+      <section id="patternsSection">
+        <h2>URL Patterns</h2>
+        <div id="patternsList"></div>
+        <div class="field row">
+          <input
+            type="text"
+            id="newPattern"
+            placeholder="https://github.com/*"
+          />
+          <button id="addPatternBtn" class="small-btn">Add</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Bookmark Server</h2>
+        <div class="field">
+          <label>Endpoint</label>
+          <input
+            type="text"
+            id="bookmarkEndpoint"
+            placeholder="http://localhost:3377"
+          />
+        </div>
+      </section>
+
+      <div class="status" id="status"></div>
+    </div>
     <script src="popup.js"></script>
   </body>
 </html>
