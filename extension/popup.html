@@ -44,37 +44,34 @@
           <input type="checkbox" id="autoShow" />
         </div>
         <div id="autoShowConfig" class="indent">
-          <div class="field">
-            <label
-              ><input type="radio" name="autoShowMode" value="all" checked />
-              All pages</label
-            >
+          <p class="hint">
+            If include patterns exist, URL must match at least one. Exclude
+            patterns always skip matching URLs.
+          </p>
+          <div class="pattern-group">
+            <h3>Include patterns</h3>
+            <div id="includePatternsList"></div>
+            <div class="field row">
+              <input
+                type="text"
+                id="newIncludePattern"
+                placeholder="https://github.com/*"
+              />
+              <button id="addIncludeBtn" class="small-btn">Add</button>
+            </div>
           </div>
-          <div class="field">
-            <label
-              ><input type="radio" name="autoShowMode" value="include" /> Only
-              matching patterns</label
-            >
+          <div class="pattern-group">
+            <h3>Exclude patterns</h3>
+            <div id="excludePatternsList"></div>
+            <div class="field row">
+              <input
+                type="text"
+                id="newExcludePattern"
+                placeholder="https://mail.google.com/*"
+              />
+              <button id="addExcludeBtn" class="small-btn">Add</button>
+            </div>
           </div>
-          <div class="field">
-            <label
-              ><input type="radio" name="autoShowMode" value="exclude" />
-              Exclude matching patterns</label
-            >
-          </div>
-        </div>
-      </section>
-
-      <section id="patternsSection">
-        <h2>URL Patterns</h2>
-        <div id="patternsList"></div>
-        <div class="field row">
-          <input
-            type="text"
-            id="newPattern"
-            placeholder="https://github.com/*"
-          />
-          <button id="addPatternBtn" class="small-btn">Add</button>
         </div>
       </section>
 

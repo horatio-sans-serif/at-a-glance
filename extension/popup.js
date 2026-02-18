@@ -11,7 +11,6 @@ const defaults = {
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "qwen3",
   autoShow: false,
-  autoShowMode: "all",
   includePatterns: [],
   excludePatterns: [],
   bookmarkEndpoint: "http://localhost:3377",
@@ -24,17 +23,9 @@ chrome.storage.sync.get(defaults, (settings) => {
     else el.value = settings[key];
   }
 
-  const radio = document.querySelector(
-    `input[name="autoShowMode"][value="${settings.autoShowMode}"]`,
-  );
-  if (radio) radio.checked = true;
-
-  renderPatterns(
-    settings.autoShowMode === "include"
-      ? settings.includePatterns
-      : settings.excludePatterns,
-  );
-  updatePatternsVisibility(settings.autoShow, settings.autoShowMode);
+  renderPatterns("include", settings.includePatterns);
+  renderPatterns("exclude", settings.excludePatterns);
+  updateAutoShowVisibility(settings.autoShow);
 });
 
 function save() {
@@ -43,9 +34,6 @@ function save() {
     const el = document.getElementById(key);
     data[key] = type === "checkbox" ? el.checked : el.value;
   }
-  data.autoShowMode =
-    document.querySelector('input[name="autoShowMode"]:checked')?.value ||
-    "all";
 
   chrome.storage.sync.get(
     ["includePatterns", "excludePatterns"],
@@ -69,87 +57,69 @@ for (const key of Object.keys(fields)) {
   el.addEventListener("change", debouncedSave);
 }
 
-document.querySelectorAll('input[name="autoShowMode"]').forEach((r) => {
-  r.addEventListener("change", () => {
-    const mode = r.value;
-    chrome.storage.sync.get(defaults, (settings) => {
-      renderPatterns(
-        mode === "include"
-          ? settings.includePatterns
-          : settings.excludePatterns,
-      );
-    });
-    updatePatternsVisibility(document.getElementById("autoShow").checked, mode);
-    debouncedSave();
-  });
-});
-
 document.getElementById("autoShow").addEventListener("change", function () {
-  const mode =
-    document.querySelector('input[name="autoShowMode"]:checked')?.value ||
-    "all";
-  updatePatternsVisibility(this.checked, mode);
+  updateAutoShowVisibility(this.checked);
 });
 
-function updatePatternsVisibility(autoShowEnabled, mode) {
-  document.getElementById("autoShowConfig").style.display = autoShowEnabled
+function updateAutoShowVisibility(enabled) {
+  document.getElementById("autoShowConfig").style.display = enabled
     ? ""
     : "none";
-  document.getElementById("patternsSection").style.display =
-    autoShowEnabled && (mode === "include" || mode === "exclude") ? "" : "none";
 }
 
-function renderPatterns(patterns) {
-  const list = document.getElementById("patternsList");
+function renderPatterns(which, patterns) {
+  const list = document.getElementById(`${which}PatternsList`);
   list.innerHTML = patterns
     .map(
       (p, i) => `
     <div class="pattern-item">
       <span>${p}</span>
-      <button data-index="${i}" title="Remove">&times;</button>
+      <button data-which="${which}" data-index="${i}" title="Remove">&times;</button>
     </div>
   `,
     )
     .join("");
   list.querySelectorAll("button").forEach((btn) => {
     btn.addEventListener("click", () =>
-      removePattern(parseInt(btn.dataset.index)),
+      removePattern(btn.dataset.which, parseInt(btn.dataset.index)),
     );
   });
 }
 
-function getActivePatternKey() {
-  const mode =
-    document.querySelector('input[name="autoShowMode"]:checked')?.value ||
-    "all";
-  return mode === "include" ? "includePatterns" : "excludePatterns";
-}
-
-document.getElementById("addPatternBtn").addEventListener("click", () => {
-  const input = document.getElementById("newPattern");
+function addPattern(which) {
+  const input = document.getElementById(
+    which === "include" ? "newIncludePattern" : "newExcludePattern",
+  );
   const val = input.value.trim();
   if (!val) return;
-  const key = getActivePatternKey();
+  const key = `${which}Patterns`;
   chrome.storage.sync.get({ [key]: [] }, (data) => {
     data[key].push(val);
     chrome.storage.sync.set(data, () => {
       input.value = "";
-      renderPatterns(data[key]);
+      renderPatterns(which, data[key]);
       showStatus("Pattern added");
     });
   });
-});
+}
 
-function removePattern(index) {
-  const key = getActivePatternKey();
+function removePattern(which, index) {
+  const key = `${which}Patterns`;
   chrome.storage.sync.get({ [key]: [] }, (data) => {
     data[key].splice(index, 1);
     chrome.storage.sync.set(data, () => {
-      renderPatterns(data[key]);
+      renderPatterns(which, data[key]);
       showStatus("Pattern removed");
     });
   });
 }
+
+document
+  .getElementById("addIncludeBtn")
+  .addEventListener("click", () => addPattern("include"));
+document
+  .getElementById("addExcludeBtn")
+  .addEventListener("click", () => addPattern("exclude"));
 
 document.getElementById("analyzeBtn").addEventListener("click", () => {
   showStatus("Analyzing...");

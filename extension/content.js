@@ -646,11 +646,15 @@ async function checkAutoShow() {
 
   const url = location.href;
 
-  if (settings.autoShowMode === "include") {
+  // Exclude patterns always skip matching URLs
+  if (settings.excludePatterns?.length > 0) {
+    if (settings.excludePatterns.some((p) => urlMatchesPattern(url, p))) return;
+  }
+
+  // If include patterns exist, URL must match at least one
+  if (settings.includePatterns?.length > 0) {
     if (!settings.includePatterns.some((p) => urlMatchesPattern(url, p)))
       return;
-  } else if (settings.autoShowMode === "exclude") {
-    if (settings.excludePatterns.some((p) => urlMatchesPattern(url, p))) return;
   }
 
   triggerAnalysis();

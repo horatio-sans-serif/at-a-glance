@@ -9,7 +9,6 @@ async function getSettings() {
         userProfile: "",
         bookmarkEndpoint: "http://localhost:3377",
         autoShow: false,
-        autoShowMode: "all",
         includePatterns: [],
         excludePatterns: [],
       },
