@@ -250,8 +250,6 @@ function createOverlay(data) {
   const findings = relevance.findings || [];
   const projectFindings = findings.filter((f) => f.type === "project");
   const interestFindings = findings.filter((f) => f.type === "interest");
-  const isLearning = relevance.isLearning || false;
-
   let accentColor;
   if (label === "irrelevant") accentColor = "#ef4444";
   else if (label === "mildly relevant") accentColor = "#e0a030";
@@ -259,17 +257,13 @@ function createOverlay(data) {
   else accentColor = "#34d399";
 
   function renderFinding(f, index) {
-    const typeLabel = f.type === "project" ? "Project" : "Interest";
     return `
       <div class="glance-finding">
-        <div class="glance-finding-header">
-          <span class="glance-finding-type">${typeLabel}</span>
-          <span class="glance-finding-name">${escapeHtml(f.name)}</span>
-        </div>
+        <div class="glance-finding-name">${escapeHtml(f.name)}</div>
         <ul class="glance-finding-rationale">
           ${f.rationale.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
         </ul>
-        <button class="glance-copy-btn" data-finding-idx="${index}">Copy Claude Instructions</button>
+        <button class="glance-copy-btn" data-finding-idx="${index}">Next Steps with Claude Code...</button>
       </div>`;
   }
 
@@ -311,19 +305,6 @@ function createOverlay(data) {
         font-size: 12px;
         font-weight: 600;
         color: ${accentColor};
-      }
-      ${
-        isLearning
-          ? `.glance-learning-badge {
-        font-size: 9px;
-        font-weight: 600;
-        padding: 1px 6px;
-        border-radius: 3px;
-        background: ${accentColor}18;
-        color: ${accentColor};
-        border: 1px solid ${accentColor}40;
-      }`
-          : ""
       }
       .glance-dismiss {
         background: none; border: none; color: #666;
@@ -379,44 +360,30 @@ function createOverlay(data) {
         padding: 8px 10px;
         margin-bottom: 6px;
       }
-      .glance-finding-header {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 4px;
-      }
-      .glance-finding-type {
-        font-size: 10px;
-        font-weight: 500;
-        padding: 1px 5px;
-        border-radius: 3px;
-        background: #2e2e2e;
-        color: ${accentColor};
-      }
       .glance-finding-name {
         font-size: 12px;
         font-weight: 600;
         color: #fff;
-        flex: 1;
+        margin-bottom: 4px;
       }
       .glance-copy-btn {
         font-size: 11px;
         font-weight: 500;
-        padding: 4px 10px;
+        padding: 5px 10px;
         border-radius: 4px;
-        border: 1px solid #333;
-        background: transparent;
-        color: ${accentColor};
+        border: none;
+        background: ${accentColor};
+        color: #1c1c1c;
         cursor: pointer;
         transition: all 0.15s;
         margin-top: 6px;
         width: 100%;
         text-align: center;
       }
-      .glance-copy-btn:hover { border-color: #555; color: #eee; }
+      .glance-copy-btn:hover { opacity: 0.85; }
       .glance-copy-btn.copied {
-        border-color: #34d399;
-        color: #34d399;
+        background: #34d399;
+        color: #1c1c1c;
       }
       .glance-finding-rationale {
         margin: 0;
@@ -444,7 +411,6 @@ function createOverlay(data) {
         <div class="glance-header-left">
           <span class="glance-title">At a Glance</span>
           <span class="glance-label">${escapeHtml(label)}</span>
-          ${isLearning ? '<span class="glance-learning-badge">Tutorial</span>' : ""}
         </div>
         <button class="glance-dismiss" id="toggle" title="Dismiss">&times;</button>
       </div>
@@ -477,30 +443,6 @@ function createOverlay(data) {
             : ""
         }
 
-        ${
-          relevance.reasons.length
-            ? `
-        <div class="glance-section">
-          <div class="glance-section-label">Why</div>
-          <ul class="glance-bullets">
-            ${relevance.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
-          </ul>
-        </div>`
-            : ""
-        }
-
-        ${
-          relevance.nextSteps.length
-            ? `
-        <div class="glance-section">
-          <div class="glance-section-label">Next Steps</div>
-          <ul class="glance-bullets">
-            ${relevance.nextSteps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
-          </ul>
-        </div>`
-            : ""
-        }
-
       </div>
     </div>
   `;
@@ -517,10 +459,10 @@ function createOverlay(data) {
       const finding = findings[idx];
       if (finding?.claudeCodePrompt) {
         navigator.clipboard.writeText(finding.claudeCodePrompt).then(() => {
-          btn.textContent = "Copied";
+          btn.textContent = "Copied!";
           btn.classList.add("copied");
           setTimeout(() => {
-            btn.textContent = "Copy";
+            btn.textContent = "Next Steps with Claude Code...";
             btn.classList.remove("copied");
           }, 2000);
         });
