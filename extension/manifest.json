@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Glance",
+  "name": "At a Glance",
   "version": "0.1.0",
-  "description": "Summarize any page, score relevance to your profile, save to your second brain.",
+  "description": "Summarize any page and score relevance to your projects and interests using a local LLM.",
   "permissions": ["storage", "activeTab", "scripting", "clipboardWrite"],
   "host_permissions": ["http://localhost/*"],
   "background": {

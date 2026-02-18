@@ -3,7 +3,6 @@ const fields = {
   ollamaEndpoint: "text",
   ollamaModel: "text",
   autoShow: "checkbox",
-  bookmarkEndpoint: "text",
 };
 
 const defaults = {
@@ -13,7 +12,6 @@ const defaults = {
   autoShow: false,
   includePatterns: [],
   excludePatterns: [],
-  bookmarkEndpoint: "http://localhost:3377",
 };
 
 chrome.storage.sync.get(defaults, (settings) => {

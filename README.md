@@ -1,4 +1,4 @@
-# Glance
+# At a Glance
 
 A Chrome extension that summarizes web pages and scores their relevance to your projects and interests using a local LLM (Ollama).
 
