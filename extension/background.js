@@ -7,7 +7,6 @@ async function getSettings() {
         ollamaEndpoint: "http://localhost:11434",
         ollamaModel: "qwen3",
         userProfile: "",
-        bookmarkEndpoint: "http://localhost:3377",
         autoShow: false,
         includePatterns: [],
         excludePatterns: [],
@@ -246,19 +245,6 @@ Work in a temporary directory. Keep it experimental -- a spike to learn from, no
   });
 }
 
-async function savePageSummary(data, settings) {
-  const endpoint = settings.bookmarkEndpoint || "http://localhost:3377";
-  try {
-    await fetch(`${endpoint}/page-summaries`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-  } catch {
-    // Best-effort save, don't fail the analysis
-  }
-}
-
 async function analyzePage(text, url, tabId) {
   const settings = await getSettings();
 
@@ -297,56 +283,12 @@ async function analyzePage(text, url, tabId) {
     chrome.action.setBadgeText({ text: String(relevance.score), tabId });
     chrome.action.setBadgeBackgroundColor({ color: badgeColor, tabId });
 
-    // Save page summary (fire and forget)
-    savePageSummary(
-      {
-        url,
-        summary,
-        relevance_findings: findings.map((f) => ({
-          type: f.type,
-          interest: f.type === "interest" ? f.name : null,
-          project: f.type === "project" ? f.name : null,
-          rationale: f.rationale,
-          claude_code_prompt: f.claudeCodePrompt,
-        })),
-        score: relevance.score,
-        label: relevance.label,
-        is_learning: isLearning,
-        date: new Date().toISOString(),
-      },
-      settings,
-    );
-
     return { summary, relevance };
   } catch (err) {
     chrome.action.setBadgeText({ text: "ERR", tabId });
     chrome.action.setBadgeBackgroundColor({ color: "#ef4444", tabId });
     throw err;
   }
-}
-
-async function checkBookmark(url, settings) {
-  const endpoint = settings.bookmarkEndpoint || "http://localhost:3377";
-  try {
-    const resp = await fetch(
-      `${endpoint}/bookmarks?url=${encodeURIComponent(url)}`,
-    );
-    if (!resp.ok) return { found: false };
-    return resp.json();
-  } catch {
-    return { found: false };
-  }
-}
-
-async function saveBookmark(data, settings) {
-  const endpoint = settings.bookmarkEndpoint || "http://localhost:3377";
-  const resp = await fetch(`${endpoint}/bookmarks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!resp.ok) throw new Error(`Save failed: ${resp.status}`);
-  return resp.json();
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -363,36 +305,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.action === "getSettings") {
     getSettings().then(sendResponse);
-    return true;
-  }
-
-  if (msg.action === "checkBookmark") {
-    getSettings()
-      .then((settings) => checkBookmark(msg.url, settings))
-      .then(sendResponse)
-      .catch(() => sendResponse({ found: false }));
-    return true;
-  }
-
-  if (msg.action === "saveBookmark") {
-    getSettings()
-      .then((settings) =>
-        saveBookmark(
-          {
-            url: msg.url,
-            title: msg.title,
-            summary: msg.summary,
-            score: msg.score,
-          },
-          settings,
-        ),
-      )
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((err) => {
-        sendResponse({ ok: false, error: err.message });
-      });
     return true;
   }
 });
