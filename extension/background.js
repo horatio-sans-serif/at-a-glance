@@ -17,7 +17,7 @@ async function getSettings() {
   });
 }
 
-async function callOllama(prompt, systemPrompt, settings, maxTokens = 600) {
+async function callOllama(prompt, systemPrompt, settings, maxTokens = 800) {
   const endpoint = settings.ollamaEndpoint || "http://localhost:11434";
   const model = settings.ollamaModel || "qwen3";
 
@@ -39,101 +39,76 @@ async function callOllama(prompt, systemPrompt, settings, maxTokens = 600) {
   return data.response.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
-async function summarizePage(text, settings) {
+async function analyzePageContent(text, url, settings) {
   const truncated = text.slice(0, 3000);
+  const hasProfile = settings.userProfile?.trim();
+
   const systemPrompt = `/no_think
-You summarize web pages. Respond with exactly 3 bullet points.
-Use keywords, phrases, analogies. Not full sentences.
-Also determine if this page is primarily LEARNING MATERIAL (tutorial, guide, course, documentation, how-to, explainer) or not.
-Format: one bullet per line starting with "- ".
-On the last line, write either "TYPE: learning" or "TYPE: other".
-Example:
-- distributed message broker like NATS but written in Rust
-- supports JetStream for persistence and exactly-once delivery
-- lightweight single binary, easy clustering
-TYPE: other`;
+You analyze web pages. Respond ONLY with valid JSON, no other text.
 
-  const raw = await callOllama(truncated, systemPrompt, settings, 300);
-  const lines = raw.split("\n").map((l) => l.trim());
-  const typeLine = lines.find((l) => l.startsWith("TYPE:"));
-  const isLearning = typeLine?.toLowerCase().includes("learning") || false;
-  const bullets = lines
-    .filter((l) => l.startsWith("- ") || l.startsWith("* "))
-    .map((l) => l.replace(/^[-*]\s*/, ""))
-    .slice(0, 3);
-
-  return { bullets: bullets.length ? bullets : [raw.trim()], isLearning };
+Your task:
+1. Summarize the page in exactly 3 bullet points (keywords/phrases/analogies, not full sentences).
+2. Determine if this is LEARNING MATERIAL (tutorial, guide, course, docs, how-to, explainer).
+${
+  hasProfile
+    ? `3. Evaluate relevance to the user profile. The profile lists PROJECTS (with disk paths) and INTERESTS.
+   For each project/interest where there IS relevance, create a finding.
+   Score guide: 0-25 irrelevant, 26-50 mildly relevant, 51-75 relevant, 76-100 very relevant.`
+    : ""
 }
 
-async function scoreRelevance(summary, url, settings) {
-  if (!settings.userProfile?.trim()) {
-    return {
-      score: 50,
-      label: "mildly relevant",
-      reasons: ["No user profile configured"],
-      findings: [],
-      nextSteps: [],
-    };
-  }
-
-  const systemPrompt = `/no_think
-You evaluate web page relevance to a user profile.
-Respond ONLY with valid JSON, no other text.
-
-The user profile lists PROJECTS (things they are building, with local disk paths)
-and INTERESTS (topics, technologies, skills they care about).
-
-Evaluate this page against EACH project and interest separately.
-For each one where there IS relevance, create a finding entry.
-A finding has type "project" or "interest", the name, and rationale items
-explaining specifically HOW this page relates to that project or interest.
-
-Format:
+Respond with this exact JSON structure:
 {
-  "score": <0-100>,
-  "label": "<irrelevant|mildly relevant|relevant|very relevant>",
-  "reasons": ["overall reason 1", "..."],
+  "summary": ["bullet 1", "bullet 2", "bullet 3"],
+  "is_learning": true/false,
+  "score": ${hasProfile ? "<0-100>" : "50"},
+  "label": "${hasProfile ? "<irrelevant|mildly relevant|relevant|very relevant>" : "mildly relevant"}",
+  "reasons": [${hasProfile ? '"overall reason 1", "..."' : ""}],
   "findings": [
-    {
+    ${
+      hasProfile
+        ? `{
       "type": "project",
       "name": "project name from profile",
-      "path": "/path/to/project if mentioned in profile",
+      "path": "/path/to/project if in profile",
       "rationale": ["specific reason 1", "specific reason 2"]
     },
     {
       "type": "interest",
       "name": "interest name from profile",
       "rationale": ["specific reason 1", "specific reason 2"]
+    }`
+        : ""
     }
   ],
-  "next_steps": ["..."]
+  "next_steps": [${hasProfile ? '"..."' : ""}]
 }
+${hasProfile ? "Only include findings where there is genuine relevance. Be specific." : ""}
+${!hasProfile ? 'No user profile configured. Set score to 50, label to "mildly relevant", empty findings.' : ""}`;
 
-Score guide: 0-25 irrelevant, 26-50 mildly relevant, 51-75 relevant, 76-100 very relevant.
-If completely irrelevant: {"score": 0, "label": "irrelevant", "reasons": [], "findings": [], "next_steps": []}
-Only include findings where there is genuine relevance. Be specific in rationale.`;
+  const prompt = `${hasProfile ? `User profile:\n${settings.userProfile}\n\n` : ""}Page URL: ${url}
 
-  const prompt = `User profile:
-${settings.userProfile}
+Page text:
+${truncated}`;
 
-Page summary:
-${summary.map((b) => "- " + b).join("\n")}
-
-Page URL: ${url}`;
-
-  const raw = await callOllama(prompt, systemPrompt, settings, 800);
+  const raw = await callOllama(prompt, systemPrompt, settings, 900);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch)
+  if (!jsonMatch) {
     return {
+      summary: ["Could not parse page"],
+      isLearning: false,
       score: 50,
       label: "mildly relevant",
       reasons: ["Could not parse response"],
       findings: [],
       nextSteps: [],
     };
+  }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
+    const summary = parsed.summary || ["Could not parse summary"];
+    const isLearning = parsed.is_learning || false;
     const score = Math.max(0, Math.min(100, parsed.score || 0));
     let label = parsed.label;
     if (!label) {
@@ -151,6 +126,8 @@ Page URL: ${url}`;
     }));
 
     return {
+      summary,
+      isLearning,
       score,
       label,
       reasons: parsed.reasons || [],
@@ -159,6 +136,8 @@ Page URL: ${url}`;
     };
   } catch {
     return {
+      summary: ["Could not parse response"],
+      isLearning: false,
       score: 50,
       label: "mildly relevant",
       reasons: ["Could not parse response"],
@@ -287,11 +266,19 @@ async function analyzePage(text, url, tabId) {
   chrome.action.setBadgeBackgroundColor({ color: "#6b7280", tabId });
 
   try {
-    const { bullets: summary, isLearning } = await summarizePage(
-      text,
-      settings,
-    );
-    const relevance = await scoreRelevance(summary, url, settings);
+    // Single Ollama call: summarize + score relevance together
+    const result = await analyzePageContent(text, url, settings);
+
+    const summary = result.summary;
+    const isLearning = result.isLearning;
+    const relevance = {
+      score: result.score,
+      label: result.label,
+      reasons: result.reasons,
+      findings: result.findings,
+      nextSteps: result.nextSteps,
+      isLearning,
+    };
 
     // Generate Claude Code prompts for each finding
     const findings = generatePrompts(
@@ -301,7 +288,6 @@ async function analyzePage(text, url, tabId) {
       isLearning,
     );
     relevance.findings = findings;
-    relevance.isLearning = isLearning;
 
     let badgeColor;
     if (relevance.score < 33) badgeColor = "#ef4444";
