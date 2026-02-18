@@ -283,6 +283,24 @@ async function analyzePage(text, url, tabId) {
     chrome.action.setBadgeText({ text: String(relevance.score), tabId });
     chrome.action.setBadgeBackgroundColor({ color: badgeColor, tabId });
 
+    // Save summary to local server (fire and forget)
+    fetch("http://localhost:3377/summaries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        summary,
+        findings: findings.map((f) => ({
+          type: f.type,
+          name: f.name,
+          rationale: f.rationale,
+        })),
+        score: relevance.score,
+        label: relevance.label,
+        is_learning: isLearning,
+      }),
+    }).catch(() => {});
+
     return { summary, relevance };
   } catch (err) {
     chrome.action.setBadgeText({ text: "ERR", tabId });
