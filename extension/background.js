@@ -61,18 +61,36 @@ async function scoreRelevance(summary, url, settings) {
   if (!settings.userProfile?.trim()) {
     return {
       score: 50,
+      label: "mildly relevant",
       reasons: ["No user profile configured"],
+      projectRelevance: {},
       nextSteps: [],
     };
   }
 
   const systemPrompt = `You evaluate web page relevance to a user profile.
 Respond ONLY with valid JSON, no other text.
-Format: {"score": <0-100>, "reasons": ["..."], "next_steps": ["..."]}
-If completely irrelevant, respond: {"score": 0, "reasons": [], "next_steps": []}
+
+The user profile may list named projects, interests, or topics. For each named item
+in the profile that this page is relevant to, include an entry in "project_relevance"
+with the item name as key and a short explanation of HOW it's relevant as value.
+Only include items where there is actual relevance.
+
+Format:
+{
+  "score": <0-100>,
+  "label": "<irrelevant|mildly relevant|relevant|very relevant>",
+  "reasons": ["..."],
+  "project_relevance": {"project_name": "how this page helps that project", ...},
+  "next_steps": ["..."]
+}
+
+Score guide: 0-25 irrelevant, 26-50 mildly relevant, 51-75 relevant, 76-100 very relevant.
+If completely irrelevant: {"score": 0, "label": "irrelevant", "reasons": [], "project_relevance": {}, "next_steps": []}
 For GitHub project pages, suggest concrete next steps like cloning, comparing alternatives.`;
 
-  const prompt = `User profile: ${settings.userProfile}
+  const prompt = `User profile:
+${settings.userProfile}
 
 Page summary:
 ${summary.map((b) => "- " + b).join("\n")}
@@ -86,13 +104,29 @@ Page URL: ${url}`;
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
+    const score = Math.max(0, Math.min(100, parsed.score || 0));
+    let label = parsed.label;
+    if (!label) {
+      if (score <= 25) label = "irrelevant";
+      else if (score <= 50) label = "mildly relevant";
+      else if (score <= 75) label = "relevant";
+      else label = "very relevant";
+    }
     return {
-      score: Math.max(0, Math.min(100, parsed.score || 0)),
+      score,
+      label,
       reasons: parsed.reasons || [],
+      projectRelevance: parsed.project_relevance || {},
       nextSteps: parsed.next_steps || [],
     };
   } catch {
-    return { score: 50, reasons: ["Could not parse response"], nextSteps: [] };
+    return {
+      score: 50,
+      label: "mildly relevant",
+      reasons: ["Could not parse response"],
+      projectRelevance: {},
+      nextSteps: [],
+    };
   }
 }
 

@@ -118,17 +118,33 @@ function createOverlay(data) {
 
   const { summary, relevance } = data;
   const score = relevance.score;
+  const label =
+    relevance.label ||
+    (score <= 25
+      ? "irrelevant"
+      : score <= 50
+        ? "mildly relevant"
+        : score <= 75
+          ? "relevant"
+          : "very relevant");
+  const projectRelevance = relevance.projectRelevance || {};
+  const projectKeys = Object.keys(projectRelevance);
 
-  let scoreColor;
-  if (score < 33) scoreColor = "#ef4444";
-  else if (score < 67) scoreColor = "#6b7280";
-  else scoreColor = "#22c55e";
+  // Meter color based on label
+  let meterColor;
+  if (label === "irrelevant") meterColor = "#ef4444";
+  else if (label === "mildly relevant") meterColor = "#f59e0b";
+  else if (label === "relevant") meterColor = "#3b82f6";
+  else meterColor = "#22c55e";
+
+  // Saved-state button color (always green for saved)
+  const savedColor = "#22c55e";
 
   shadow.innerHTML = `
     <style>
       @keyframes glancePulse {
-        0%, 100% { box-shadow: 0 4px 24px ${scoreColor}44; }
-        50% { box-shadow: 0 4px 32px ${scoreColor}aa; }
+        0%, 100% { box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+        50% { box-shadow: 0 6px 28px rgba(0,0,0,0.55); }
       }
       :host { all: initial; }
       .glance-panel {
@@ -136,17 +152,17 @@ function createOverlay(data) {
         background: #1a1a2e;
         color: #e0e0e0;
         border-radius: 12px;
-        padding: 16px;
-        max-width: 360px;
-        box-shadow: 0 4px 24px ${scoreColor}66;
+        padding: 0;
+        width: 340px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         animation: glancePulse 0.8s ease-in-out 4;
         font-size: 13px;
         line-height: 1.5;
         transition: all 0.3s ease;
+        overflow: hidden;
       }
       .glance-panel.collapsed {
-        padding: 8px 12px;
-        max-width: 80px;
+        width: auto;
         cursor: pointer;
       }
       .glance-panel.collapsed .glance-body { display: none; }
@@ -154,30 +170,58 @@ function createOverlay(data) {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 12px;
+        padding: 10px 14px;
+        background: #16162a;
+        border-bottom: 1px solid #2a2a4a;
       }
-      .glance-panel.collapsed .glance-header { margin-bottom: 0; }
-      .glance-score {
-        background: ${scoreColor};
-        color: white;
-        font-weight: 700;
-        font-size: 14px;
-        padding: 2px 8px;
-        border-radius: 6px;
-        min-width: 32px;
-        text-align: center;
+      .glance-header-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .glance-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: ${meterColor};
+        text-transform: capitalize;
       }
       .glance-toggle {
-        background: none; border: none; color: #888;
-        cursor: pointer; font-size: 16px; padding: 0 4px;
+        background: none; border: none; color: #666;
+        cursor: pointer; font-size: 14px; padding: 2px 4px;
       }
-      .glance-toggle:hover { color: #ccc; }
+      .glance-toggle:hover { color: #aaa; }
+      .glance-body {
+        max-height: 420px;
+        overflow-y: auto;
+        padding: 12px 14px;
+        scrollbar-width: thin;
+        scrollbar-color: #3a3a5a #1a1a2e;
+      }
+      .glance-body::-webkit-scrollbar { width: 5px; }
+      .glance-body::-webkit-scrollbar-track { background: #1a1a2e; }
+      .glance-body::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
+
+      .glance-meter-wrap { margin-bottom: 12px; }
+      .glance-meter-track {
+        height: 6px;
+        background: #2a2a4a;
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .glance-meter-fill {
+        height: 100%;
+        width: ${score}%;
+        background: ${meterColor};
+        border-radius: 3px;
+        transition: width 0.6s ease;
+      }
+
       .glance-section { margin-bottom: 10px; }
       .glance-section-title {
         font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: #888;
+        color: #666;
         margin-bottom: 4px;
       }
       .glance-bullet {
@@ -193,50 +237,132 @@ function createOverlay(data) {
         content: '\\2022';
         position: absolute;
         left: -12px;
-        color: ${scoreColor};
+        color: #555;
       }
-      .glance-reason { color: #aaa; font-size: 12px; }
+      .glance-reason { color: #999; font-size: 12px; }
+
+      .glance-projects { margin-bottom: 10px; }
+      .glance-project {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+      .glance-project-name {
+        color: ${meterColor};
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .glance-project-name::after { content: ':'; }
+      .glance-project-why { color: #aaa; }
+
       .glance-actions {
         display: flex;
         gap: 8px;
-        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid #2a2a4a;
+        margin-top: 4px;
       }
       .glance-btn {
         background: #2a2a4a;
-        color: #ccc;
+        color: #999;
         border: 1px solid #3a3a5a;
         border-radius: 6px;
-        padding: 6px 12px;
-        font-size: 12px;
+        padding: 5px 12px;
+        font-size: 11px;
         cursor: pointer;
         transition: background 0.2s;
       }
-      .glance-btn:hover { background: #3a3a5a; }
-      .glance-btn.saved { background: ${scoreColor}33; border-color: ${scoreColor}; color: ${scoreColor}; }
+      .glance-btn:hover { background: #3a3a5a; color: #ccc; }
+      .glance-btn.saved { background: ${savedColor}22; border-color: ${savedColor}66; color: ${savedColor}; }
+
+      details { margin: 0; }
+      details summary {
+        cursor: pointer;
+        font-size: 11px;
+        color: #666;
+        padding: 6px 0 2px;
+        list-style: none;
+        user-select: none;
+      }
+      details summary::-webkit-details-marker { display: none; }
+      details summary::before {
+        content: '\\25B6';
+        display: inline-block;
+        margin-right: 6px;
+        font-size: 8px;
+        transition: transform 0.2s;
+        color: #555;
+      }
+      details[open] summary::before {
+        transform: rotate(90deg);
+      }
+      details[open] .glance-details-body {
+        animation: glanceSlideIn 0.15s ease;
+      }
+      @keyframes glanceSlideIn {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
     </style>
     <div class="glance-panel" id="panel">
       <div class="glance-header">
-        <div class="glance-score">${score}</div>
-        <button class="glance-toggle" id="toggle" title="Collapse">&#x25B4;</button>
+        <div class="glance-header-left">
+          <span style="font-size:11px;color:#555;font-weight:600;">GLANCE</span>
+          <span class="glance-label">${escapeHtml(label)}</span>
+        </div>
+        <button class="glance-toggle" id="toggle" title="Dismiss">&times;</button>
       </div>
       <div class="glance-body">
+        <div class="glance-meter-wrap">
+          <div class="glance-meter-track">
+            <div class="glance-meter-fill"></div>
+          </div>
+        </div>
+
+        <details>
+          <summary>Details</summary>
+          <div class="glance-details-body">
+
         <div class="glance-section">
           <div class="glance-section-title">Summary</div>
           <ul class="glance-bullet">
             ${summary.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
           </ul>
         </div>
+
+        ${
+          projectKeys.length
+            ? `
+        <div class="glance-section glance-projects">
+          <div class="glance-section-title">Your Projects</div>
+          ${projectKeys
+            .map(
+              (name) => `
+            <div class="glance-project">
+              <span class="glance-project-name">${escapeHtml(name)}</span>
+              <span class="glance-project-why">${escapeHtml(projectRelevance[name])}</span>
+            </div>
+          `,
+            )
+            .join("")}
+        </div>`
+            : ""
+        }
+
         ${
           relevance.reasons.length
             ? `
         <div class="glance-section">
-          <div class="glance-section-title">Relevance</div>
+          <div class="glance-section-title">Why</div>
           <ul class="glance-bullet glance-reason">
             ${relevance.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
           </ul>
         </div>`
             : ""
         }
+
         ${
           relevance.nextSteps.length
             ? `
@@ -248,24 +374,19 @@ function createOverlay(data) {
         </div>`
             : ""
         }
+
         <div class="glance-actions">
           <button class="glance-btn" id="saveBtn">Save</button>
-          <button class="glance-btn" id="dismissBtn">Dismiss</button>
         </div>
+
+          </div>
+        </details>
       </div>
     </div>
   `;
 
-  const panel = shadow.getElementById("panel");
   const toggle = shadow.getElementById("toggle");
-  toggle.addEventListener("click", () => {
-    const collapsed = panel.classList.toggle("collapsed");
-    toggle.innerHTML = collapsed ? "&#x25BE;" : "&#x25B4;";
-  });
-
-  shadow
-    .getElementById("dismissBtn")
-    .addEventListener("click", () => host.remove());
+  toggle.addEventListener("click", () => host.remove());
 
   shadow.getElementById("saveBtn").addEventListener("click", () => {
     chrome.runtime.sendMessage(
