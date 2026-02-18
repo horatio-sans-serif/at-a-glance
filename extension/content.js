@@ -265,11 +265,11 @@ function createOverlay(data) {
         <div class="glance-finding-header">
           <span class="glance-finding-type">${typeLabel}</span>
           <span class="glance-finding-name">${escapeHtml(f.name)}</span>
-          <button class="glance-copy-btn" data-finding-idx="${index}" title="Copy Claude Code prompt">Copy</button>
         </div>
         <ul class="glance-finding-rationale">
           ${f.rationale.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
         </ul>
+        <button class="glance-copy-btn" data-finding-idx="${index}">Copy Claude Instructions</button>
       </div>`;
   }
 
@@ -281,21 +281,21 @@ function createOverlay(data) {
       .glance-panel {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         background: #1c1c1c;
-        color: #d4d4d4;
+        color: ${accentColor};
         border-radius: 10px;
         width: 340px;
         box-shadow: 0 4px 24px rgba(0,0,0,0.5);
         font-size: 13px;
         line-height: 1.5;
         overflow: hidden;
+        padding: 14px 16px;
       }
 
       .glance-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 8px 14px;
-        border-bottom: 1px solid #2a2a2a;
+        margin-bottom: 10px;
       }
       .glance-header-left {
         display: flex;
@@ -335,7 +335,6 @@ function createOverlay(data) {
       .glance-body {
         max-height: 420px;
         overflow-y: auto;
-        padding: 10px 14px;
         scrollbar-width: thin;
         scrollbar-color: #333 #1c1c1c;
       }
@@ -344,6 +343,7 @@ function createOverlay(data) {
       .glance-body::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
       .glance-section { margin-bottom: 10px; }
+      .glance-section:last-child { margin-bottom: 0; }
       .glance-section-label {
         font-size: 11px;
         color: #fff;
@@ -353,20 +353,22 @@ function createOverlay(data) {
 
       ul.glance-bullets {
         margin: 0;
-        padding: 0 0 0 14px;
+        padding: 0 0 0 18px;
         list-style: none;
       }
       ul.glance-bullets li {
         position: relative;
-        margin-bottom: 2px;
-        color: #d4d4d4;
+        margin-bottom: 3px;
+        color: ${accentColor};
         font-size: 12px;
         line-height: 1.45;
       }
       ul.glance-bullets li::before {
         content: '\\2022';
         position: absolute;
-        left: -12px;
+        left: -14px;
+        font-size: 16px;
+        line-height: 1.1;
         color: ${accentColor};
       }
 
@@ -389,75 +391,52 @@ function createOverlay(data) {
         padding: 1px 5px;
         border-radius: 3px;
         background: #2e2e2e;
-        color: #aaa;
+        color: ${accentColor};
       }
       .glance-finding-name {
         font-size: 12px;
         font-weight: 600;
-        color: ${accentColor};
+        color: #fff;
         flex: 1;
       }
       .glance-copy-btn {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 500;
-        padding: 2px 8px;
+        padding: 4px 10px;
         border-radius: 4px;
-        border: 1px solid #444;
+        border: 1px solid #333;
         background: transparent;
-        color: #bbb;
+        color: ${accentColor};
         cursor: pointer;
         transition: all 0.15s;
-        flex-shrink: 0;
+        margin-top: 6px;
+        width: 100%;
+        text-align: center;
       }
-      .glance-copy-btn:hover { border-color: #666; color: #eee; }
+      .glance-copy-btn:hover { border-color: #555; color: #eee; }
       .glance-copy-btn.copied {
         border-color: #34d399;
         color: #34d399;
       }
       .glance-finding-rationale {
         margin: 0;
-        padding: 0 0 0 14px;
+        padding: 0 0 0 18px;
         list-style: none;
       }
       .glance-finding-rationale li {
         position: relative;
-        margin-bottom: 2px;
+        margin-bottom: 3px;
         font-size: 12px;
-        color: #ccc;
+        color: ${accentColor};
         line-height: 1.4;
       }
       .glance-finding-rationale li::before {
         content: '\\2022';
         position: absolute;
-        left: -12px;
+        left: -14px;
+        font-size: 16px;
+        line-height: 1.1;
         color: ${accentColor};
-      }
-
-      details { margin: 0; }
-      details summary {
-        cursor: pointer;
-        font-size: 11px;
-        color: #aaa;
-        padding: 4px 0 2px;
-        list-style: none;
-        user-select: none;
-      }
-      details summary::-webkit-details-marker { display: none; }
-      details summary::before {
-        content: '\\25B8';
-        display: inline-block;
-        margin-right: 6px;
-        font-size: 9px;
-        transition: transform 0.15s;
-        color: #888;
-      }
-      details[open] summary::before { transform: rotate(90deg); }
-      details[open] .glance-details-body {
-        animation: glanceReveal 0.12s ease;
-      }
-      @keyframes glanceReveal {
-        from { opacity: 0; transform: translateY(-3px); }
-        to { opacity: 1; transform: translateY(0); }
       }
     </style>
     <div class="glance-panel">
@@ -470,10 +449,6 @@ function createOverlay(data) {
         <button class="glance-dismiss" id="toggle" title="Dismiss">&times;</button>
       </div>
       <div class="glance-body">
-
-        <details>
-          <summary>Details</summary>
-          <div class="glance-details-body">
 
         <div class="glance-section">
           <div class="glance-section-label">Summary</div>
@@ -526,8 +501,6 @@ function createOverlay(data) {
             : ""
         }
 
-          </div>
-        </details>
       </div>
     </div>
   `;
