@@ -17,7 +17,7 @@ async function getSettings() {
   });
 }
 
-async function callOllama(prompt, systemPrompt, settings) {
+async function callOllama(prompt, systemPrompt, settings, maxTokens = 600) {
   const endpoint = settings.ollamaEndpoint || "http://localhost:11434";
   const model = settings.ollamaModel || "qwen3";
 
@@ -29,31 +29,40 @@ async function callOllama(prompt, systemPrompt, settings) {
       prompt,
       system: systemPrompt,
       stream: false,
-      options: { temperature: 0.3 },
+      options: { temperature: 0.3, num_predict: maxTokens },
     }),
   });
 
   if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
   const data = await response.json();
-  return data.response;
+  // Strip qwen3 thinking blocks
+  return data.response.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
 async function summarizePage(text, settings) {
-  const truncated = text.slice(0, 4000);
-  const systemPrompt = `You summarize web pages. Respond with exactly 3 bullet points.
+  const truncated = text.slice(0, 3000);
+  const systemPrompt = `/no_think
+You summarize web pages. Respond with exactly 3 bullet points.
 Use keywords, phrases, analogies. Not full sentences.
+Also determine if this page is primarily LEARNING MATERIAL (tutorial, guide, course, documentation, how-to, explainer) or not.
 Format: one bullet per line starting with "- ".
-Example: "- distributed message broker like NATS but written in Rust"`;
+On the last line, write either "TYPE: learning" or "TYPE: other".
+Example:
+- distributed message broker like NATS but written in Rust
+- supports JetStream for persistence and exactly-once delivery
+- lightweight single binary, easy clustering
+TYPE: other`;
 
-  const raw = await callOllama(truncated, systemPrompt, settings);
-  const bullets = raw
-    .split("\n")
-    .map((l) => l.trim())
+  const raw = await callOllama(truncated, systemPrompt, settings, 300);
+  const lines = raw.split("\n").map((l) => l.trim());
+  const typeLine = lines.find((l) => l.startsWith("TYPE:"));
+  const isLearning = typeLine?.toLowerCase().includes("learning") || false;
+  const bullets = lines
     .filter((l) => l.startsWith("- ") || l.startsWith("* "))
     .map((l) => l.replace(/^[-*]\s*/, ""))
     .slice(0, 3);
 
-  return bullets.length ? bullets : [raw.trim()];
+  return { bullets: bullets.length ? bullets : [raw.trim()], isLearning };
 }
 
 async function scoreRelevance(summary, url, settings) {
@@ -67,7 +76,8 @@ async function scoreRelevance(summary, url, settings) {
     };
   }
 
-  const systemPrompt = `You evaluate web page relevance to a user profile.
+  const systemPrompt = `/no_think
+You evaluate web page relevance to a user profile.
 Respond ONLY with valid JSON, no other text.
 
 The user profile lists PROJECTS (things they are building, with local disk paths)
@@ -101,7 +111,6 @@ Format:
 
 Score guide: 0-25 irrelevant, 26-50 mildly relevant, 51-75 relevant, 76-100 very relevant.
 If completely irrelevant: {"score": 0, "label": "irrelevant", "reasons": [], "findings": [], "next_steps": []}
-For GitHub project pages, suggest concrete next steps like cloning, comparing with alternatives.
 Only include findings where there is genuine relevance. Be specific in rationale.`;
 
   const prompt = `User profile:
@@ -112,7 +121,7 @@ ${summary.map((b) => "- " + b).join("\n")}
 
 Page URL: ${url}`;
 
-  const raw = await callOllama(prompt, systemPrompt, settings);
+  const raw = await callOllama(prompt, systemPrompt, settings, 800);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch)
     return {
@@ -160,7 +169,7 @@ Page URL: ${url}`;
 }
 
 // Generate Claude Code prompts for each finding
-function generatePrompts(findings, summary, url) {
+function generatePrompts(findings, summary, url, isLearning) {
   return findings.map((f) => {
     const summaryText = summary.map((b) => "- " + b).join("\n");
     const rationaleText = f.rationale.map((r) => "- " + r).join("\n");
@@ -169,6 +178,20 @@ function generatePrompts(findings, summary, url) {
       const pathClause = f.path
         ? `The project lives on disk at: ${f.path}`
         : `Find the project "${f.name}" on disk`;
+
+      const learningBlock = isLearning
+        ? `
+
+This page appears to be LEARNING MATERIAL. In addition to the demos above, create an INTERACTIVE TUTORIAL as a single-page HTML app:
+- Use React.js loaded from CDN (no build step)
+- Include interactive diagrams/graphs (use a charting library from CDN if needed)
+- Add quizzes after each section to test understanding
+- Show a progress bar tracking completed sections
+- Organize into clear sections with smooth navigation
+- Make it visually polished with modern CSS3 (animations, transitions, gradients)
+- Open the tutorial in the browser when done`
+        : "";
+
       return {
         ...f,
         claudeCodePrompt: `I found a page that's relevant to my project "${f.name}".
@@ -182,14 +205,37 @@ ${summaryText}
 Relevance to "${f.name}":
 ${rationaleText}
 
-Please investigate this page's technology/approach and write a report on how it can be leveraged by "${f.name}". Specifically:
-1. What can be directly used (libraries, patterns, APIs)?
-2. What can be learned from (architecture, design decisions)?
-3. What ideas could be adapted or experimented with?
+Please:
 
-Then, in a separate worktree or container, try incorporating or prototyping the most promising finding. Keep it experimental/provisional -- don't merge into main. Show me what you learn.`,
+1. Investigate this page's technology/approach and write a concise report (HTML or PDF) on how it benefits "${f.name}". Cover:
+   - What can be directly used (libraries, patterns, APIs)
+   - What architecture/design decisions are worth adopting
+   - Concrete integration points with "${f.name}"
+
+2. Build 2-3 working DEMO applications that SHOWCASE the benefit of this technology/approach specifically for "${f.name}". Each demo should:
+   - Be a self-contained web app (HTML/CSS/JS, use CDN imports)
+   - Clearly demonstrate one specific benefit in action
+   - Include a title card explaining what it demonstrates and why it matters for "${f.name}"
+   - Be visually polished and immediately impressive
+
+3. Open each demo and the report in the browser when done.
+
+Work in a separate worktree or temporary directory. Keep it experimental -- don't merge into main.${learningBlock}`,
       };
     } else {
+      const learningBlock = isLearning
+        ? `
+
+This page appears to be LEARNING MATERIAL. In addition to the demos, create an INTERACTIVE TUTORIAL as a single-page HTML app:
+- Use React.js loaded from CDN (no build step)
+- Include interactive diagrams/graphs (use a charting library from CDN if needed)
+- Add quizzes after each section to test understanding
+- Show a progress bar tracking completed sections
+- Organize into clear sections with smooth navigation
+- Make it visually polished with modern CSS3 (animations, transitions, gradients)
+- Open the tutorial in the browser when done`
+        : "";
+
       return {
         ...f,
         claudeCodePrompt: `I found a page relevant to my interest in "${f.name}".
@@ -201,11 +247,21 @@ ${summaryText}
 Why it's relevant to "${f.name}":
 ${rationaleText}
 
-I'd like to explore this further. Please:
-1. Write a deeper analysis of what this page covers and why it matters for "${f.name}"
-2. Identify concrete things I could build or experiment with based on these findings
-3. If there's enough substance, scaffold a new exploratory project that incorporates these ideas. Keep it lightweight and experimental -- a spike/prototype to learn from, not production code.
-4. Try it out in a container or temporary directory. Show me what you discover.`,
+Please:
+
+1. Write a concise analysis report (HTML or PDF) covering what this page offers and why it matters for "${f.name}".
+
+2. Build 2-3 working DEMO applications that SHOWCASE the key ideas from this page applied to "${f.name}". Each demo should:
+   - Be a self-contained web app (HTML/CSS/JS, use CDN imports)
+   - Demonstrate one specific concept or technique in action
+   - Include a title card explaining what it demonstrates
+   - Be visually polished and immediately impressive
+
+3. If there's enough substance, scaffold a lightweight exploratory project that incorporates the most promising ideas.
+
+4. Open each demo and the report in the browser when done.
+
+Work in a temporary directory. Keep it experimental -- a spike to learn from, not production code.${learningBlock}`,
       };
     }
   });
@@ -231,12 +287,21 @@ async function analyzePage(text, url, tabId) {
   chrome.action.setBadgeBackgroundColor({ color: "#6b7280", tabId });
 
   try {
-    const summary = await summarizePage(text, settings);
+    const { bullets: summary, isLearning } = await summarizePage(
+      text,
+      settings,
+    );
     const relevance = await scoreRelevance(summary, url, settings);
 
     // Generate Claude Code prompts for each finding
-    const findings = generatePrompts(relevance.findings, summary, url);
+    const findings = generatePrompts(
+      relevance.findings,
+      summary,
+      url,
+      isLearning,
+    );
     relevance.findings = findings;
+    relevance.isLearning = isLearning;
 
     let badgeColor;
     if (relevance.score < 33) badgeColor = "#ef4444";
@@ -260,6 +325,7 @@ async function analyzePage(text, url, tabId) {
         })),
         score: relevance.score,
         label: relevance.label,
+        is_learning: isLearning,
         date: new Date().toISOString(),
       },
       settings,
