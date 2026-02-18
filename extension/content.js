@@ -636,7 +636,11 @@ function urlMatchesPattern(url, pattern) {
   return regex.test(url);
 }
 
+let _analysisInFlight = false;
+
 function triggerAnalysis() {
+  if (_analysisInFlight) return;
+  _analysisInFlight = true;
   showLoadingOverlay();
   const text = domToText();
   chrome.runtime.sendMessage(
@@ -646,6 +650,7 @@ function triggerAnalysis() {
       url: location.href,
     },
     (response) => {
+      _analysisInFlight = false;
       if (response?.ok) {
         createOverlay(response);
       } else {
