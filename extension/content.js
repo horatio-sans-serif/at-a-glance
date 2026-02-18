@@ -99,20 +99,141 @@ function domToText(node, customizations = {}) {
 
 // --- Overlay UI ---
 
+const GLANCE_POSITION =
+  "position:fixed;bottom:16px;right:16px;z-index:2147483647;";
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
 }
 
+function getOrCreateHost() {
+  let host = document.getElementById("glance-overlay-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "glance-overlay-host";
+    host.style.cssText = GLANCE_POSITION;
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function showLoadingOverlay() {
+  const existing = document.getElementById("glance-overlay-host");
+  if (existing) existing.remove();
+
+  const host = getOrCreateHost();
+  const shadow = host.attachShadow({ mode: "closed" });
+  host._shadow = shadow;
+
+  shadow.innerHTML = `
+    <style>
+      :host { all: initial; }
+      @keyframes glanceSpin {
+        to { transform: rotate(360deg); }
+      }
+      .glance-loading {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        border-radius: 12px;
+        padding: 16px 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        width: 180px;
+      }
+      .glance-loading-title {
+        font-size: 10px;
+        color: #555;
+        font-style: italic;
+        letter-spacing: 0.02em;
+      }
+      .glance-spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #2a2a4a;
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: glanceSpin 0.8s linear infinite;
+      }
+      .glance-loading-label {
+        font-size: 11px;
+        color: #888;
+      }
+    </style>
+    <div class="glance-loading">
+      <div class="glance-loading-title">At a Glance...</div>
+      <div class="glance-spinner"></div>
+      <div class="glance-loading-label">assessing relevance...</div>
+    </div>
+  `;
+
+  return host;
+}
+
+function showErrorOverlay(message) {
+  const existing = document.getElementById("glance-overlay-host");
+  if (existing) existing.remove();
+
+  const host = getOrCreateHost();
+  const shadow = host.attachShadow({ mode: "closed" });
+
+  shadow.innerHTML = `
+    <style>
+      :host { all: initial; }
+      .glance-error {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        border-radius: 12px;
+        padding: 14px 18px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        width: 240px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .glance-error-title {
+        font-size: 10px;
+        color: #555;
+        font-style: italic;
+      }
+      .glance-error-msg {
+        font-size: 12px;
+        color: #ef4444;
+      }
+      .glance-error-dismiss {
+        background: none;
+        border: none;
+        color: #666;
+        font-size: 11px;
+        cursor: pointer;
+        padding: 0;
+        text-align: left;
+      }
+      .glance-error-dismiss:hover { color: #aaa; }
+    </style>
+    <div class="glance-error">
+      <div class="glance-error-title">At a Glance...</div>
+      <div class="glance-error-msg">${escapeHtml(message)}</div>
+      <button class="glance-error-dismiss" id="dismiss">dismiss</button>
+    </div>
+  `;
+
+  shadow
+    .getElementById("dismiss")
+    .addEventListener("click", () => host.remove());
+}
+
 function createOverlay(data) {
   const existing = document.getElementById("glance-overlay-host");
   if (existing) existing.remove();
 
-  const host = document.createElement("div");
-  host.id = "glance-overlay-host";
-  host.style.cssText = "position:fixed;top:16px;right:16px;z-index:2147483647;";
-  document.body.appendChild(host);
+  const host = getOrCreateHost();
 
   const shadow = host.attachShadow({ mode: "closed" });
 
@@ -309,7 +430,7 @@ function createOverlay(data) {
     <div class="glance-panel" id="panel">
       <div class="glance-header">
         <div class="glance-header-left">
-          <span style="font-size:11px;color:#555;font-weight:600;">GLANCE</span>
+          <span style="font-size:10px;color:#555;font-style:italic;">At a Glance...</span>
           <span class="glance-label">${escapeHtml(label)}</span>
         </div>
         <button class="glance-toggle" id="toggle" title="Dismiss">&times;</button>
@@ -433,6 +554,7 @@ function urlMatchesPattern(url, pattern) {
 }
 
 function triggerAnalysis() {
+  showLoadingOverlay();
   const text = domToText();
   chrome.runtime.sendMessage(
     {
@@ -443,6 +565,8 @@ function triggerAnalysis() {
     (response) => {
       if (response?.ok) {
         createOverlay(response);
+      } else {
+        showErrorOverlay(response?.error || "Analysis failed");
       }
     },
   );
