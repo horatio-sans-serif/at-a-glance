@@ -63,7 +63,7 @@ async function scoreRelevance(summary, url, settings) {
       score: 50,
       label: "mildly relevant",
       reasons: ["No user profile configured"],
-      projectRelevance: {},
+      findings: [],
       nextSteps: [],
     };
   }
@@ -71,23 +71,39 @@ async function scoreRelevance(summary, url, settings) {
   const systemPrompt = `You evaluate web page relevance to a user profile.
 Respond ONLY with valid JSON, no other text.
 
-The user profile may list named projects, interests, or topics. For each named item
-in the profile that this page is relevant to, include an entry in "project_relevance"
-with the item name as key and a short explanation of HOW it's relevant as value.
-Only include items where there is actual relevance.
+The user profile lists PROJECTS (things they are building, with local disk paths)
+and INTERESTS (topics, technologies, skills they care about).
+
+Evaluate this page against EACH project and interest separately.
+For each one where there IS relevance, create a finding entry.
+A finding has type "project" or "interest", the name, and rationale items
+explaining specifically HOW this page relates to that project or interest.
 
 Format:
 {
   "score": <0-100>,
   "label": "<irrelevant|mildly relevant|relevant|very relevant>",
-  "reasons": ["..."],
-  "project_relevance": {"project_name": "how this page helps that project", ...},
+  "reasons": ["overall reason 1", "..."],
+  "findings": [
+    {
+      "type": "project",
+      "name": "project name from profile",
+      "path": "/path/to/project if mentioned in profile",
+      "rationale": ["specific reason 1", "specific reason 2"]
+    },
+    {
+      "type": "interest",
+      "name": "interest name from profile",
+      "rationale": ["specific reason 1", "specific reason 2"]
+    }
+  ],
   "next_steps": ["..."]
 }
 
 Score guide: 0-25 irrelevant, 26-50 mildly relevant, 51-75 relevant, 76-100 very relevant.
-If completely irrelevant: {"score": 0, "label": "irrelevant", "reasons": [], "project_relevance": {}, "next_steps": []}
-For GitHub project pages, suggest concrete next steps like cloning, comparing alternatives.`;
+If completely irrelevant: {"score": 0, "label": "irrelevant", "reasons": [], "findings": [], "next_steps": []}
+For GitHub project pages, suggest concrete next steps like cloning, comparing with alternatives.
+Only include findings where there is genuine relevance. Be specific in rationale.`;
 
   const prompt = `User profile:
 ${settings.userProfile}
@@ -100,7 +116,13 @@ Page URL: ${url}`;
   const raw = await callOllama(prompt, systemPrompt, settings);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch)
-    return { score: 50, reasons: ["Could not parse response"], nextSteps: [] };
+    return {
+      score: 50,
+      label: "mildly relevant",
+      reasons: ["Could not parse response"],
+      findings: [],
+      nextSteps: [],
+    };
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
@@ -112,11 +134,19 @@ Page URL: ${url}`;
       else if (score <= 75) label = "relevant";
       else label = "very relevant";
     }
+
+    const findings = (parsed.findings || []).map((f) => ({
+      type: f.type || "interest",
+      name: f.name || "unknown",
+      path: f.path || null,
+      rationale: f.rationale || [],
+    }));
+
     return {
       score,
       label,
       reasons: parsed.reasons || [],
-      projectRelevance: parsed.project_relevance || {},
+      findings,
       nextSteps: parsed.next_steps || [],
     };
   } catch {
@@ -124,9 +154,74 @@ Page URL: ${url}`;
       score: 50,
       label: "mildly relevant",
       reasons: ["Could not parse response"],
-      projectRelevance: {},
+      findings: [],
       nextSteps: [],
     };
+  }
+}
+
+// Generate Claude Code prompts for each finding
+function generatePrompts(findings, summary, url) {
+  return findings.map((f) => {
+    const summaryText = summary.map((b) => "- " + b).join("\n");
+    const rationaleText = f.rationale.map((r) => "- " + r).join("\n");
+
+    if (f.type === "project") {
+      const pathClause = f.path
+        ? `The project lives on disk at: ${f.path}`
+        : `Find the project "${f.name}" on disk`;
+      return {
+        ...f,
+        claudeCodePrompt: `I found a page that's relevant to my project "${f.name}".
+
+${pathClause}
+
+Page: ${url}
+Summary:
+${summaryText}
+
+Relevance to "${f.name}":
+${rationaleText}
+
+Please investigate this page's technology/approach and write a report on how it can be leveraged by "${f.name}". Specifically:
+1. What can be directly used (libraries, patterns, APIs)?
+2. What can be learned from (architecture, design decisions)?
+3. What ideas could be adapted or experimented with?
+
+Then, in a separate worktree or container, try incorporating or prototyping the most promising finding. Keep it experimental/provisional -- don't merge into main. Show me what you learn.`,
+      };
+    } else {
+      return {
+        ...f,
+        claudeCodePrompt: `I found a page relevant to my interest in "${f.name}".
+
+Page: ${url}
+Summary:
+${summaryText}
+
+Why it's relevant to "${f.name}":
+${rationaleText}
+
+I'd like to explore this further. Please:
+1. Write a deeper analysis of what this page covers and why it matters for "${f.name}"
+2. Identify concrete things I could build or experiment with based on these findings
+3. If there's enough substance, scaffold a new exploratory project that incorporates these ideas. Keep it lightweight and experimental -- a spike/prototype to learn from, not production code.
+4. Try it out in a container or temporary directory. Show me what you discover.`,
+      };
+    }
+  });
+}
+
+async function savePageSummary(data, settings) {
+  const endpoint = settings.bookmarkEndpoint || "http://localhost:3377";
+  try {
+    await fetch(`${endpoint}/page-summaries`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+  } catch {
+    // Best-effort save, don't fail the analysis
   }
 }
 
@@ -140,6 +235,10 @@ async function analyzePage(text, url, tabId) {
     const summary = await summarizePage(text, settings);
     const relevance = await scoreRelevance(summary, url, settings);
 
+    // Generate Claude Code prompts for each finding
+    const findings = generatePrompts(relevance.findings, summary, url);
+    relevance.findings = findings;
+
     let badgeColor;
     if (relevance.score < 33) badgeColor = "#ef4444";
     else if (relevance.score < 67) badgeColor = "#6b7280";
@@ -147,6 +246,25 @@ async function analyzePage(text, url, tabId) {
 
     chrome.action.setBadgeText({ text: String(relevance.score), tabId });
     chrome.action.setBadgeBackgroundColor({ color: badgeColor, tabId });
+
+    // Save page summary (fire and forget)
+    savePageSummary(
+      {
+        url,
+        summary,
+        relevance_findings: findings.map((f) => ({
+          type: f.type,
+          interest: f.type === "interest" ? f.name : null,
+          project: f.type === "project" ? f.name : null,
+          rationale: f.rationale,
+          claude_code_prompt: f.claudeCodePrompt,
+        })),
+        score: relevance.score,
+        label: relevance.label,
+        date: new Date().toISOString(),
+      },
+      settings,
+    );
 
     return { summary, relevance };
   } catch (err) {

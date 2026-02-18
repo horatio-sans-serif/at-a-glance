@@ -234,7 +234,6 @@ function createOverlay(data) {
   if (existing) existing.remove();
 
   const host = getOrCreateHost();
-
   const shadow = host.attachShadow({ mode: "closed" });
 
   const { summary, relevance } = data;
@@ -248,18 +247,33 @@ function createOverlay(data) {
         : score <= 75
           ? "relevant"
           : "very relevant");
-  const projectRelevance = relevance.projectRelevance || {};
-  const projectKeys = Object.keys(projectRelevance);
+  const findings = relevance.findings || [];
+  const projectFindings = findings.filter((f) => f.type === "project");
+  const interestFindings = findings.filter((f) => f.type === "interest");
 
-  // Meter color based on label
   let meterColor;
   if (label === "irrelevant") meterColor = "#ef4444";
   else if (label === "mildly relevant") meterColor = "#f59e0b";
   else if (label === "relevant") meterColor = "#3b82f6";
   else meterColor = "#22c55e";
 
-  // Saved-state button color (always green for saved)
   const savedColor = "#22c55e";
+
+  function renderFinding(f, index) {
+    const typeIcon = f.type === "project" ? "&#x1F4C1;" : "&#x2B50;";
+    const typeLabel = f.type === "project" ? "PROJECT" : "INTEREST";
+    return `
+      <div class="glance-finding">
+        <div class="glance-finding-header">
+          <span class="glance-finding-type">${typeLabel}</span>
+          <span class="glance-finding-name">${escapeHtml(f.name)}</span>
+          <button class="glance-copy-btn" data-finding-idx="${index}" title="Copy Claude Code prompt">COPY</button>
+        </div>
+        <ul class="glance-bullet glance-finding-rationale">
+          ${f.rationale.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
+        </ul>
+      </div>`;
+  }
 
   shadow.innerHTML = `
     <style>
@@ -274,7 +288,7 @@ function createOverlay(data) {
         color: #e0e0e0;
         border-radius: 12px;
         padding: 0;
-        width: 340px;
+        width: 360px;
         box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         animation: glancePulse 0.8s ease-in-out 4;
         font-size: 13px;
@@ -282,11 +296,6 @@ function createOverlay(data) {
         transition: all 0.3s ease;
         overflow: hidden;
       }
-      .glance-panel.collapsed {
-        width: auto;
-        cursor: pointer;
-      }
-      .glance-panel.collapsed .glance-body { display: none; }
       .glance-header {
         display: flex;
         align-items: center;
@@ -312,7 +321,7 @@ function createOverlay(data) {
       }
       .glance-toggle:hover { color: #aaa; }
       .glance-body {
-        max-height: 420px;
+        max-height: 450px;
         overflow-y: auto;
         padding: 12px 14px;
         scrollbar-width: thin;
@@ -322,7 +331,7 @@ function createOverlay(data) {
       .glance-body::-webkit-scrollbar-track { background: #1a1a2e; }
       .glance-body::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
 
-      .glance-meter-wrap { margin-bottom: 12px; }
+      .glance-meter-wrap { margin-bottom: 10px; }
       .glance-meter-track {
         height: 6px;
         background: #2a2a4a;
@@ -352,7 +361,7 @@ function createOverlay(data) {
       }
       .glance-bullet li {
         position: relative;
-        margin-bottom: 4px;
+        margin-bottom: 3px;
       }
       .glance-bullet li::before {
         content: '\\2022';
@@ -362,21 +371,57 @@ function createOverlay(data) {
       }
       .glance-reason { color: #999; font-size: 12px; }
 
-      .glance-projects { margin-bottom: 10px; }
-      .glance-project {
+      .glance-finding {
+        background: #1e1e38;
+        border: 1px solid #2a2a4a;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+      }
+      .glance-finding-header {
         display: flex;
+        align-items: center;
         gap: 6px;
         margin-bottom: 4px;
-        font-size: 12px;
       }
-      .glance-project-name {
-        color: ${meterColor};
+      .glance-finding-type {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: #2a2a4a;
+        color: #888;
+      }
+      .glance-finding-name {
+        font-size: 12px;
         font-weight: 600;
-        white-space: nowrap;
+        color: ${meterColor};
+        flex: 1;
+      }
+      .glance-copy-btn {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid #3b82f6;
+        background: #3b82f622;
+        color: #3b82f6;
+        cursor: pointer;
+        transition: all 0.15s;
         flex-shrink: 0;
       }
-      .glance-project-name::after { content: ':'; }
-      .glance-project-why { color: #aaa; }
+      .glance-copy-btn:hover { background: #3b82f644; }
+      .glance-copy-btn.copied {
+        border-color: #22c55e;
+        background: #22c55e22;
+        color: #22c55e;
+      }
+      .glance-finding-rationale {
+        font-size: 12px;
+        color: #aaa;
+      }
 
       .glance-actions {
         display: flex;
@@ -416,9 +461,7 @@ function createOverlay(data) {
         transition: transform 0.2s;
         color: #555;
       }
-      details[open] summary::before {
-        transform: rotate(90deg);
-      }
+      details[open] summary::before { transform: rotate(90deg); }
       details[open] .glance-details-body {
         animation: glanceSlideIn 0.15s ease;
       }
@@ -454,20 +497,21 @@ function createOverlay(data) {
         </div>
 
         ${
-          projectKeys.length
+          projectFindings.length
             ? `
-        <div class="glance-section glance-projects">
-          <div class="glance-section-title">Your Projects</div>
-          ${projectKeys
-            .map(
-              (name) => `
-            <div class="glance-project">
-              <span class="glance-project-name">${escapeHtml(name)}</span>
-              <span class="glance-project-why">${escapeHtml(projectRelevance[name])}</span>
-            </div>
-          `,
-            )
-            .join("")}
+        <div class="glance-section">
+          <div class="glance-section-title">Relevant to Your Projects</div>
+          ${projectFindings.map((f) => renderFinding(f, findings.indexOf(f))).join("")}
+        </div>`
+            : ""
+        }
+
+        ${
+          interestFindings.length
+            ? `
+        <div class="glance-section">
+          <div class="glance-section-title">Relevant to Your Interests</div>
+          ${interestFindings.map((f) => renderFinding(f, findings.indexOf(f))).join("")}
         </div>`
             : ""
         }
@@ -506,9 +550,30 @@ function createOverlay(data) {
     </div>
   `;
 
-  const toggle = shadow.getElementById("toggle");
-  toggle.addEventListener("click", () => host.remove());
+  // Dismiss
+  shadow
+    .getElementById("toggle")
+    .addEventListener("click", () => host.remove());
 
+  // Copy buttons
+  shadow.querySelectorAll(".glance-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.findingIdx);
+      const finding = findings[idx];
+      if (finding?.claudeCodePrompt) {
+        navigator.clipboard.writeText(finding.claudeCodePrompt).then(() => {
+          btn.textContent = "COPIED";
+          btn.classList.add("copied");
+          setTimeout(() => {
+            btn.textContent = "COPY";
+            btn.classList.remove("copied");
+          }, 2000);
+        });
+      }
+    });
+  });
+
+  // Save button
   shadow.getElementById("saveBtn").addEventListener("click", () => {
     chrome.runtime.sendMessage(
       {
@@ -530,6 +595,7 @@ function createOverlay(data) {
     );
   });
 
+  // Check if already saved
   chrome.runtime.sendMessage(
     { action: "checkBookmark", url: location.href },
     (resp) => {
